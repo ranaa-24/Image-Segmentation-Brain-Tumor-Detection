@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brain MRI tumor segmentation</title>
+<style>
+  :root { --bg:#16191d; --panel:#1f2428; --line:#343b42; --text:#e6e8ea; --muted:#9aa3ab; --accent:#5fb3c9; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 20px 48px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 24px; }
+  .drop { display:block; border:1px dashed var(--line); background:var(--panel); border-radius:8px; padding:28px; text-align:center; cursor:pointer; }
+  .drop:hover, .drop:focus-within { border-color:var(--accent); }
+  input[type=file] { position:absolute; opacity:0; pointer-events:none; }
+  button { margin-top:16px; background:var(--accent); color:#0c1417; border:0; border-radius:6px; padding:10px 20px; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  button:focus-visible, .drop:focus-within { outline:2px solid var(--text); outline-offset:2px; }
+  .views { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:24px; }
+  figure { margin:0; background:#000; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  figure img { display:block; width:100%; height:auto; }
+  figcaption { padding:6px 10px; font-size:.85rem; color:var(--muted); background:var(--panel); }
+  #result { margin-top:20px; font-size:1.05rem; }
+  .err { color:var(--bad); }
+  .note { margin-top:32px; font-size:.85rem; color:var(--muted); border-top:1px solid var(--line); padding-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Brain MRI tumor segmentation</h1>
+  <p class="sub">Upload a single 2D MRI slice. The model outlines the region it predicts as tumor.</p>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="image/png,image/jpeg,image/tiff">
+    <span id="label">Choose an MRI slice (PNG, JPG or TIF)</span>
+  </label>
+  <button id="run" disabled>Run segmentation</button>
+
+  <div id="result" aria-live="polite"></div>
+  <div class="views" id="views" hidden>
+    <figure><img id="o" alt="Original MRI slice"><figcaption>Original</figcaption></figure>
+    <figure><img id="v" alt="Slice with predicted tumor in red"><figcaption>Predicted tumor overlay</figcaption></figure>
+    <figure><img id="m" alt="Binary tumor mask"><figcaption>Mask</figcaption></figure>
+  </div>
+
+  <p class="note">Research prototype. Not a medical device and not for diagnosis or treatment decisions.</p>
+</main>
+
+<script>
+const file = document.getElementById("file"), run = document.getElementById("run"),
+      label = document.getElementById("label"), result = document.getElementById("result"),
+      views = document.getElementById("views");
+
+file.addEventListener("change", () => {
+  const f = file.files[0];
+  label.textContent = f ? f.name : "Choose an MRI slice (PNG, JPG or TIF)";
+  run.disabled = !f;
+});
+
+run.addEventListener("click", async () => {
+  const fd = new FormData();
+  fd.append("image", file.files[0]);
+  run.disabled = true; run.textContent = "Segmenting..."; result.textContent = ""; views.hidden = true;
+  try {
+    const r = await fetch("/predict", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Request failed.");
+    document.getElementById("o").src = d.original;
+    document.getElementById("v").src = d.overlay;
+    document.getElementById("m").src = d.mask;
+    views.hidden = false;
+    result.className = "";
+    result.textContent = d.found
+      ? `Tumor region found: ${d.area_pct}% of the slice, mean confidence ${d.confidence}.`
+      : "No tumor region found in this slice.";
+  } catch (e) {
+    result.className = "err";
+    result.textContent = e.message;
+  } finally {
+    run.disabled = false; run.textContent = "Run segmentation";
+  }
+});
+</script>
+</body>
+</html>
